@@ -1,4 +1,13 @@
-"""Energía solar en España — forecasting diario (M1 lineal con meteo)."""
+"""Energía solar en España — forecasting diario (M1 lineal con meteo).
+
+App de entrega: carga el dataset limpio, reentrena la regresión lineal M1
+(mismas features y mismo split temporal que el notebook) y permite
+predecir la producción de mañana a partir de la meteo prevista.
+
+Ejecución:
+    streamlit run app.py
+"""
+
 from pathlib import Path
 
 import numpy as np
@@ -11,9 +20,22 @@ CLEAN = BASE_DIR / "data" / "solar_espana_clean.csv"
 RESULTS = BASE_DIR / "data" / "resultados_modelos.csv"
 
 FEAT_FULL = [
-    "radiacion_MJm2", "temp_media_Madrid", "dow", "month", "dayofmonth",
-    "dayofyear", "year", "weekend", "dayofyear_sin", "dayofyear_cos",
-    "lag1", "lag2", "lag3", "lag7", "roll7", "roll30",
+    "radiacion_MJm2",
+    "temp_media_Madrid",
+    "dow",
+    "month",
+    "dayofmonth",
+    "dayofyear",
+    "year",
+    "weekend",
+    "dayofyear_sin",
+    "dayofyear_cos",
+    "lag1",
+    "lag2",
+    "lag3",
+    "lag7",
+    "roll7",
+    "roll30",
 ]
 
 st.set_page_config(page_title="Solar España — previsión", layout="wide")
@@ -21,6 +43,7 @@ st.set_page_config(page_title="Solar España — previsión", layout="wide")
 
 @st.cache_data(ttl="1h")
 def load_clean() -> pd.DataFrame:
+    """Carga el CSV limpio y reconstruye lags + features cíclicas (con shift(1), sin fuga)."""
     df = pd.read_csv(CLEAN, parse_dates=["fecha"])
     df = df.sort_values("fecha").reset_index(drop=True)
     df["dayofyear_sin"] = np.sin(2 * np.pi * df.dayofyear / 365.25)
@@ -34,19 +57,20 @@ def load_clean() -> pd.DataFrame:
 
 @st.cache_data(ttl="1h")
 def load_results() -> pd.DataFrame:
+    """Comparativa de modelos en test (misma tabla que genera el notebook)."""
     res = pd.read_csv(RESULTS, index_col=0)
     return res.sort_values("MAE")
 
 
 @st.cache_resource
-def load_model(_df: pd.DataFrame) -> tuple[LinearRegression, pd.DataFrame, pd.DataFrame]:
-    cutoff = _df.fecha.max() - pd.Timedelta(days=364)
-    train = _df[_df.fecha < cutoff]
-    test = _df[_df.fecha >= cutoff]
+def load_model() -> tuple[LinearRegression, pd.DataFrame, pd.DataFrame]:
+    """Reentrena M1 con el split temporal del notebook (test = últimos 365 días)."""
+    dfm = load_clean()
+    cutoff = dfm.fecha.max() - pd.Timedelta(days=364)
+    train = dfm[dfm.fecha < cutoff]
+    test = dfm[dfm.fecha >= cutoff].copy()
     model = LinearRegression().fit(train[FEAT_FULL], train.solar_gwh)
-    pred = model.predict(test[FEAT_FULL])
-    test = test.copy()
-    test["pred_M1"] = pred
+    test["pred_M1"] = model.predict(test[FEAT_FULL])
     return model, train, test
 
 
@@ -56,7 +80,7 @@ st.caption("Modelo M1: regresión lineal con meteorología · test últimos 365 
 try:
     dfm = load_clean()
     results = load_results()
-    model, train, test = load_model(dfm)
+    model, train, test = load_model()
 except FileNotFoundError as exc:
     st.error(f"Falta un fichero de datos: {exc}. Ejecuta `python datos.py` primero.")
     st.stop()
@@ -64,10 +88,14 @@ except FileNotFoundError as exc:
 last = dfm.iloc[-1]
 m1 = results.loc["M1_lineal_con_meteo"]
 
-with st.container(horizontal=True):
+c1, c2, c3, c4 = st.columns(4)
+with c1:
     st.metric("Predicción M1 mañana", f"{test.iloc[-1]['pred_M1']:.1f} GWh", border=True)
+with c2:
     st.metric("MAE en test (M1)", f"{m1['MAE']:.2f} GWh", border=True)
+with c3:
     st.metric("Acierto M1", f"{m1['Acierto']:.1f} %", border=True)
+with c4:
     st.metric(
         f"Último dato real ({last.fecha.date()})",
         f"{last.solar_gwh:.1f} GWh",
@@ -84,7 +112,11 @@ with pred_tab:
     with st.form("predict", border=False):
         col_a, col_b, col_c = st.columns(3)
         with col_a:
-            fecha = st.date_input("Fecha a predecir", value=next_day)
+            fecha = st.date_input(
+                "Fecha a predecir",
+                value=next_day,
+                min_value=dfm.fecha.max().date(),
+            )
         with col_b:
             radiacion = st.number_input(
                 "Radiación prevista (MJ/m²)", min_value=0.0, max_value=35.0, value=18.0
@@ -96,7 +128,7 @@ with pred_tab:
                 max_value=45.0,
                 value=18.0,
             )
-        submitted = st.form_submit_button("Predecir", icon=":material/bolt:")
+        st.form_submit_button("Predecir", icon=":material/bolt:")
 
     hist = dfm.set_index("fecha").solar_gwh
     row = {
@@ -121,18 +153,17 @@ with pred_tab:
     yhat = float(model.predict(x)[0])
     rmse = float(results.loc["M1_lineal_con_meteo", "RMSE"])
 
-    if submitted or True:
-        st.metric(
-            f"Producción prevista {fecha}",
-            f"{yhat:.1f} GWh",
-            delta=f"±RMSE {rmse:.1f} GWh",
-            border=True,
-        )
-        st.caption(f"Intervalo orientativo: {yhat - rmse:.1f} – {yhat + rmse:.1f} GWh.")
-        st.caption(
-            "Lags calculados desde los últimos 30 días observados; "
-            "la meteo debe ser la prevista, no la observada."
-        )
+    st.metric(
+        f"Producción prevista {fecha}",
+        f"{yhat:.1f} GWh",
+        delta=f"±RMSE {rmse:.1f} GWh",
+        border=True,
+    )
+    st.caption(f"Intervalo orientativo: {yhat - rmse:.1f} – {yhat + rmse:.1f} GWh.")
+    st.caption(
+        "Lags calculados desde los últimos 30 días observados; "
+        "la meteo debe ser la prevista, no la observada."
+    )
 
     recent = dfm.tail(60)[["fecha", "solar_gwh"]].rename(
         columns={"fecha": "Fecha", "solar_gwh": "Real"}
@@ -179,3 +210,10 @@ with data_tab:
     monthly = dfm.groupby("month").solar_gwh.mean().reset_index(name="GWh media")
     monthly = monthly.rename(columns={"month": "Mes"})
     st.bar_chart(monthly, x="Mes", y="GWh media", y_label="GWh media diaria")
+
+st.divider()
+st.caption(
+    "Fuentes: REE (estructura de generación, solar fotovoltaica) + "
+    "Open-Meteo (radiación y temperatura, Madrid como proxy nacional). "
+    "Ver metodología completa en `proyecto_solar.ipynb`."
+)

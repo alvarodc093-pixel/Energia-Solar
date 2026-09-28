@@ -1,7 +1,10 @@
-pandas
-matplotlib
-seaborn
-requests
-ipykernel
-scikit-learn
-streamlit
+pandas==3.0.6
+matplotlib==3.11.2
+seaborn==0.13.2
+requests==2.34.2
+ipykernel==7.3.0
+scikit-learn==1.9.1
+streamlit==1.64.0
+jupyter==1.1.1
+nbconvert==7.17.1
+numpy==2.5.3
