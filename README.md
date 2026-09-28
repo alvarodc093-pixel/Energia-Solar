@@ -1,103 +1,101 @@
-# Energía solar en España — Forecasting diario
+# Energía solar en España - predecir lo de mañana
 
-**Pregunta de negocio:** ¿cuánta energía solar fotovoltaica producirá España **mañana** (GWh/día) para planificar la red (Red Eléctrica)?
+La idea es sencilla: adivinar cuánta solar fotovoltaica va a producir España mañana (en GWh por día). Esto le sirve a Red Eléctrica para organizar la red.
 
-Proyecto de serie temporal con datos reales: **REE** (generación solar fotovoltaica diaria) + **Open-Meteo** (radiación y temperatura en Madrid como proxy nacional). Incluye limpieza, EDA, split temporal, baselines, 5 modelos comparados con/sin meteorología, conclusiones y app interactiva.
+Usé datos reales: la generación de REE + la meteo de Open-Meteo (radiación y temperatura de Madrid, que uso como referencia para toda España). Al final comparé varios modelos con y sin meteo y monté una app para probar.
 
-## Estructura
+## Qué hay en cada archivo
 
 ```text
 .
-├── proyecto_solar.ipynb        # Proyecto completo y ejecutado (pasos 1–6, gráficas inline)
-├── app.py                      # App Streamlit: predicción de mañana + comparativa + exploración
-├── datos.py                    # Limpieza local: raw -> clean (sin internet)
-├── descargar_datos.py          # Descarga REE + Open-Meteo -> data/solar_espana.csv (requiere internet)
-├── requirements.txt            # Dependencias pineadas
+├── proyecto_solar.ipynb        # todo el proyecto paso a paso, con gráficas
+├── app.py                      # app en Streamlit para predecir mañana
+├── datos.py                    # deja los datos limpios sin usar internet
+├── descargar_datos.py          # baja los datos de REE y Open-Meteo (aquí sí hace falta internet)
+├── requirements.txt            # lo que hay que instalar
 └── data/
-    ├── solar_espana.csv        # 1366 días (2023-01-01 a 2026-09-27): solar + radiación + temp
-    ├── solar_espana_clean.csv  # Dataset limpio + features de calendario
-    └── resultados_modelos.csv  # Comparativa de modelos en test (la genera el notebook)
+    ├── solar_espana.csv        # 1366 días del 2023-01-01 al 2026-09-27
+    ├── solar_espana_clean.csv  # lo mismo pero con columnas de fecha añadidas
+    └── resultados_modelos.csv  # tabla con cómo lo hizo cada modelo (la crea el notebook)
 ```
 
-## Datos
+## Los datos
 
-- `data/solar_espana.csv`: 1366 filas, sin nulos/duplicados/huecos. Columnas: `fecha`, `solar_gwh`, `radiacion_MJm2`, `temp_media_Madrid`.
-- `data/solar_espana_clean.csv`: + calendario (`dow`, `month`, `dayofmonth`, `dayofyear`, `year`, `weekend`).
-- Features de modelado (notebook y app, sin fuga): calendario + `dayofyear_sin/cos` + meteo del día + `lag1/2/3/7`, `roll7`, `roll30` (con `shift(1)`).
-- Split temporal: train 2023-01-31 → 2025-09-27 (971 días), test últimos 365 días (2025-09-28 → 2026-09-27, incluye 2026 no visto en train para medir extrapolación real).
+- `solar_espana.csv`: 1366 filas, no tenía nulos ni duplicados ni días sueltos. Columnas: `fecha`, `solar_gwh`, `radiacion_MJm2`, `temp_media_Madrid`.
+- `solar_espana_clean.csv`: le añadí `dow`, `month`, `dayofmonth`, `dayofyear`, `year`, `weekend` a partir de la fecha.
+- Para predecir usé: calendario + `dayofyear_sin/cos` + meteo del día + `lag1/2/3/7`, `roll7`, `roll30` (siempre con `shift(1)` para no copiar el futuro).
+- Separé train y test por fecha: train del 2023-01-31 al 2025-09-27 (971 días), test los últimos 365 días (2025-09-28 al 2026-09-27). El test tiene 2026, que el modelo no había visto, así se ve si aguanta de verdad.
 
-Fuentes: [REE estructura de generación](https://apidatos.ree.es/es/datos/generacion/estructura-generacion) y [Open-Meteo archive](https://archive-api.open-meteo.com/v1/archive) (Madrid 40.41, −3.70).
+Fuentes: [REE](https://apidatos.ree.es/es/datos/generacion/estructura-generacion) y [Open-Meteo](https://archive-api.open-meteo.com/v1/archive) (Madrid 40.41, -3.70).
 
-## Instalación y uso
+## Cómo probarlo
 
 ```bash
 python -m venv .venv
 # Windows:
 .venv\Scripts\python.exe -m pip install -r requirements.txt
-# Linux/Mac:
-# .venv/bin/python -m pip install -r requirements.txt
 ```
 
-Regenerar el dataset limpio (sin internet):
+Dejar los datos limpios:
 
 ```bash
 .venv\Scripts\python.exe datos.py
 ```
 
-Re-ejecutar el notebook de punta a punta:
+Volver a correr el notebook entero:
 
 ```bash
 .venv\Scripts\jupyter.exe nbconvert --to notebook --execute proyecto_solar.ipynb --output proyecto_solar.ipynb --allow-errors
 ```
 
-Solo descargar datos frescos desde las APIs (requiere internet):
+Bajar datos nuevos (hace falta internet):
 
 ```bash
 .venv\Scripts\python.exe descargar_datos.py
 .venv\Scripts\python.exe datos.py
 ```
 
-Lanzar la app:
+Abrir la app:
 
 ```bash
 .venv\Scripts\streamlit.exe run app.py
 ```
 
-## Notebook (`proyecto_solar.ipynb`, ejecutado)
+## Qué hice en el notebook
 
-1. **Pregunta de negocio** — forecasting diario, `y = solar_gwh`.
-2. **Limpieza** — verificación (0 nulos, 0 duplicados, 0 huecos, 0 imposibles; extremos coherentes) → no se elimina ninguna fila.
-3. **EDA** — serie temporal + media móvil 30d, radiación vs solar por año (corr 0.85), boxplot mensual, temp vs solar + media anual, día de semana (~nulo), histogramas, heatmap de correlación, año×mes, ratio solar/radiación (efecto capacidad), autocorrelación (lag-1: 0.92).
-4. **Split temporal + baselines** — B0 naive (ayer), B1 media móvil 7d, B2 media mensual histórica.
-5. **Modelos** — M1 lineal con meteo, M2 lineal sin meteo, M3 RandomForest, M4 HistGradientBoosting, M5 RF sin meteo. Métricas: MAE, RMSE, MAPE, R², % acierto = 100·(1−MAPE), % días con error ≤10 % / ≤20 %.
-6. **Conclusiones** — ver abajo. Guarda `data/resultados_modelos.csv`.
+1. Planteé la pregunta: predecir `solar_gwh` de mañana.
+2. Revisé los datos: 0 nulos, 0 duplicados, 0 huecos, 0 valores raros. Los extremos cuadraban (días nublados de invierno y veranos de 2026 con más placas), así que no borré nada.
+3. Miré los datos con calma: serie en el tiempo + media de 30 días, radiación contra solar por año (corr 0.85), cajas por mes, temp contra solar, día de la semana (casi no afecta), histogramas, correlaciones, tabla año x mes, ratio solar/radiación (se ve que hay más capacidad cada año), y autocorrelación (lag-1: 0.92).
+4. Separé train/test e hice 3 baselines tontos: B0 lo de ayer, B1 media de 7 días, B2 media del mes de años anteriores.
+5. Probé 5 modelos: M1 lineal con meteo, M2 lineal sin meteo, M3 RandomForest, M4 HistGradientBoosting, M5 RF sin meteo. Medí MAE, RMSE, MAPE, R2, % acierto = 100*(1-MAPE) y % de días con error pequeño.
+6. Saqué conclusiones y guardé `resultados_modelos.csv`.
 
-## Resultados (test: últimos 365 días)
+## Cómo quedó cada modelo (en test)
 
 | Modelo | MAE | R² | % acierto |
 |---|---|---|---|
 | M1 lineal con meteo | 16.54 | 0.919 | 84.5 |
 | M2 lineal sin meteo | 19.51 | 0.882 | 81.8 |
 | B1 media móvil 7d | 22.03 | 0.849 | 80.2 |
-| B0 naive (ayer) | 22.20 | 0.839 | 80.2 |
+| B0 lo de ayer | 22.20 | 0.839 | 80.2 |
 | M3 RandomForest | 23.93 | 0.818 | 84.3 |
 | M4 HistGradientBoosting | 24.55 | 0.807 | 83.6 |
 | M5 RF sin meteo | 24.98 | 0.812 | 80.5 |
-| B2 media mensual hist. | 48.70 | 0.336 | 68.9 |
+| B2 media mensual | 48.70 | 0.336 | 68.9 |
 
-% acierto = 100·(1−MAPE). Detalle completo (RMSE, p10, p20) en `data/resultados_modelos.csv`.
+El detalle (RMSE, p10, p20) está en `data/resultados_modelos.csv`.
 
-## Conclusiones
+## Lo que saqué en claro
 
-1. **Mejor modelo: M1 lineal con meteo** (MAE 16.54 GWh, R² 0.919, 84.5 % acierto; 57.8 % de días con error ≤10 % y 82.5 % con error ≤20 %). Supera al mejor baseline en ~4.3 pp.
-2. **La meteorología es decisiva:** el lineal pasa de 81.8 % a 84.5 % con radiación+temperatura (MAE 19.51 → 16.54); el RF de 80.5 % a 84.3 %.
-3. **Los árboles no extrapolan la tendencia:** RF/HGB pierden contra el lineal (e incluso contra la media móvil en MAE) porque 2026 trae más potencia instalada no vista en train; el lineal extrapola vía `year` + relación radiación→solar.
-4. **Respuesta de negocio:** predecir mañana con M1 (calendario + meteo prevista + últimos 7–30 días); 4 de cada 5 días el error es ≤20 %, útil para reserva de red.
-5. **Limitaciones:** se asume meteo prevista perfecta, Madrid como proxy nacional y necesidad de reentrenar cada año por nueva capacidad. Siguiente paso: reentreno mensual, intervalos por cuantiles y evaluar con meteo prevista real.
+1. El mejor fue el M1, el lineal con meteo (MAE 16.54, acierto 84.5%. Más de la mitad de los días clava con menos de 10% de error y 4 de cada 5 con menos de 20%).
+2. La meteo importa mucho: sin ella el lineal baja de 84.5% a 81.8% y el RF de 84.3% a 80.5%.
+3. Los árboles se quedaron atrás porque 2026 tiene más potencia instalada que no habían visto. El lineal sí tira para arriba gracias a `year` y a la relación radiación-solar.
+4. Para negocio: con el M1 y la meteo prevista se puede planificar la reserva bastante bien.
+5. Fallos que asumo: uso la meteo observada como si fuera la prevista perfecta, Madrid no es toda España, y hay que reentrenar cada año porque se ponen más placas. Lo siguiente sería reentrenar cada mes y dar intervalos en vez de un solo número.
 
-## Reproducibilidad
+## Para repetirlo
 
-- Notebook ejecutado de principio a fin (celdas con salidas y gráficas inline).
-- `python datos.py` verificado: 1366 filas, 0 nulos/duplicados/huecos.
-- App verificada: reentrena M1 con el mismo split y reproduce MAE 16.54 en test.
-- Dependencias pineadas en `requirements.txt` (probado con Python 3.14, Streamlit 1.64).
+- El notebook está ya corrido de arriba a abajo con salidas y gráficas.
+- `python datos.py` deja 1366 filas, 0 nulos/duplicados/huecos.
+- La app reentrena el M1 igual que el notebook y da el mismo MAE 16.54.
+- Probado con Python 3.14 y lo de `requirements.txt`.
