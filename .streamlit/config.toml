@@ -1,0 +1,50 @@
+# Tema "Cielo despejado" — celeste tiempo / energía solar
+# Fondo color cielo claro, acento celeste intenso, texto azul tormenta.
+# Ver: https://docs.streamlit.io/develop/concepts/configuration/theming
+[theme]
+base = "light"
+primaryColor = "#0284C7"
+backgroundColor = "#F0F9FF"
+secondaryBackgroundColor = "#E0F2FE"
+codeBackgroundColor = "#E0F2FE"
+textColor = "#0C4A6E"
+linkColor = "#0284C7"
+codeTextColor = "#0C4A6E"
+borderColor = "#7DD3FC"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "medium"
+buttonRadius = "medium"
+linkUnderline = false
+
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+codeFontSize = "0.875rem"
+baseFontSize = 16
+baseFontWeight = 400
+headingFontSizes = ["32px", "24px", "20px", "16px", "14px", "12px"]
+headingFontWeights = [600, 600, 600, 500, 500, 500]
+
+# Graficos: gama cielo + ambar sol como acento
+chartCategoricalColors = ["#0284C7", "#0EA5E9", "#F59E0B", "#10B981", "#6366F1", "#F472B6", "#64748B"]
+chartSequentialColors = ["#F0F9FF", "#E0F2FE", "#BAE6FD", "#7DD3FC", "#38BDF8", "#0EA5E9", "#0284C7", "#0369A1", "#075985", "#0C4A6E"]
+
+# Paleta semantica en tonos cielo
+redColor = "#DC2626"
+orangeColor = "#EA580C"
+yellowColor = "#CA8A04"
+greenColor = "#059669"
+blueColor = "#0284C7"
+violetColor = "#7C3AED"
+grayColor = "#64748B"
+
+dataframeBorderColor = "#7DD3FC"
+dataframeHeaderBackgroundColor = "#E0F2FE"
+
+[theme.sidebar]
+backgroundColor = "#E0F2FE"
+secondaryBackgroundColor = "#BAE6FD"
+codeBackgroundColor = "#BAE6FD"
+textColor = "#0C4A6E"
+borderColor = "#7DD3FC"
+primaryColor = "#0284C7"
