@@ -4,3 +4,4 @@ seaborn
 requests
 ipykernel
 scikit-learn
+streamlit
