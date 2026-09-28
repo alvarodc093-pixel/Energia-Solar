@@ -1,8 +1,11 @@
 """Descarga datos reales: REE solar fotovoltaica + Open-Meteo radiación Madrid."""
+from pathlib import Path
+
 import requests
 import pandas as pd
 
-OUT = "data/solar_espana.csv"
+BASE_DIR = Path(__file__).resolve().parent
+OUT = BASE_DIR / "data" / "solar_espana.csv"
 
 def fetch_ree(start, end):
     url = "https://apidatos.ree.es/es/datos/generacion/estructura-generacion"
@@ -41,15 +44,27 @@ def fetch_meteo(start, end):
     return df
 
 # Por tramos anuales para no saturar la API de REE
-tramos = [("2023-01-01", "2023-12-31"), ("2024-01-01", "2024-12-31"),
-          ("2025-01-01", "2025-12-31"), ("2026-01-01", "2026-09-27")]
-dfs = [fetch_ree(s, e) for s, e in tramos]
-solar = pd.concat(dfs, ignore_index=True)
+def main():
+    tramos = [("2023-01-01", "2023-12-31"), ("2024-01-01", "2024-12-31"),
+              ("2025-01-01", "2025-12-31"), ("2026-01-01", "2026-09-27")]
+    try:
+        dfs = [fetch_ree(s, e) for s, e in tramos]
+    except requests.RequestException as exc:
+        raise SystemExit(f"Error descargando REE: {exc}") from exc
+    solar = pd.concat(dfs, ignore_index=True)
 
-met = fetch_meteo("2023-01-01", "2026-09-27")
-df = pd.merge(solar, met, on="fecha", how="inner").sort_values("fecha")
-df.to_csv(OUT, index=False)
-print(f"Guardado {OUT}: {df.shape}")
-print(df.head(3).to_string())
-print(df.tail(3).to_string())
-print(df.describe().to_string())
+    try:
+        met = fetch_meteo("2023-01-01", "2026-09-27")
+    except requests.RequestException as exc:
+        raise SystemExit(f"Error descargando Open-Meteo: {exc}") from exc
+    df = pd.merge(solar, met, on="fecha", how="inner").sort_values("fecha")
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(OUT, index=False)
+    print(f"Guardado {OUT}: {df.shape}")
+    print(df.head(3).to_string())
+    print(df.tail(3).to_string())
+    print(df.describe().to_string())
+
+
+if __name__ == "__main__":
+    main()
