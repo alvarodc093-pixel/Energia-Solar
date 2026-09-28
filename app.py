@@ -1,8 +1,8 @@
 """Predicción de solar en España.
 
-Esta app carga los datos limpios, entrena el modelo lineal M1
-(igual que en el notebook) y deja probar qué pasaría mañana
-según la meteo que pongas.
+Esta app carga el modelo M1 ya entrenado (models/modelo_solar.pkl,
+generado con `python entrenar_modelo.py`, igual que en el notebook)
+y deja probar qué pasaría mañana según la meteo que pongas.
 
 Para abrirla:
     streamlit run app.py
@@ -10,6 +10,7 @@ Para abrirla:
 
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -18,6 +19,7 @@ from sklearn.linear_model import LinearRegression
 BASE_DIR = Path(__file__).resolve().parent
 CLEAN = BASE_DIR / "data" / "solar_espana_clean.csv"
 RESULTS = BASE_DIR / "data" / "resultados_modelos.csv"
+MODEL_PKL = BASE_DIR / "models" / "modelo_solar.pkl"
 
 FEAT_FULL = [
     "radiacion_MJm2",
@@ -38,7 +40,11 @@ FEAT_FULL = [
     "roll30",
 ]
 
-st.set_page_config(page_title="Solar España — previsión", layout="wide")
+st.set_page_config(
+    page_title="Solar España — previsión",
+    page_icon=":material/wb_sunny:",
+    layout="wide",
+)
 
 
 @st.cache_data(ttl="1h")
@@ -64,17 +70,18 @@ def load_results() -> pd.DataFrame:
 
 @st.cache_resource
 def load_model() -> tuple[LinearRegression, pd.DataFrame, pd.DataFrame]:
-    """Entrena el M1 separando por fecha (test = últimos 365 días)."""
+    """Carga el M1 desde el .pkl y separa train/test por fecha (test = últimos 365 días)."""
+    bundle = joblib.load(MODEL_PKL)
+    model = bundle["model"]
     dfm = load_clean()
     cutoff = dfm.fecha.max() - pd.Timedelta(days=364)
     train = dfm[dfm.fecha < cutoff]
     test = dfm[dfm.fecha >= cutoff].copy()
-    model = LinearRegression().fit(train[FEAT_FULL], train.solar_gwh)
     test["pred_M1"] = model.predict(test[FEAT_FULL])
     return model, train, test
 
 
-st.title("Cuánta solar haremos mañana en España")
+st.title("Cuánta solar haremos mañana en España", icon=":material/wb_sunny:")
 st.caption("Uso un modelo lineal con meteo (M1), probado en el último año")
 
 try:
@@ -82,7 +89,10 @@ try:
     results = load_results()
     model, train, test = load_model()
 except FileNotFoundError as exc:
-    st.error(f"Falta un archivo de datos: {exc}. Corre `python datos.py` antes.")
+    st.error(
+        f"Falta un archivo: {exc}. "
+        "Corre `python datos.py` y luego `python entrenar_modelo.py` antes."
+    )
     st.stop()
 
 last = dfm.iloc[-1]
@@ -103,7 +113,11 @@ with c4:
     )
 
 pred_tab, comp_tab, data_tab = st.tabs(
-    ["Predecir mañana", "Modelos", "Ver datos"]
+    [
+        ":material/thermostat: Predecir mañana",
+        ":material/bar_chart: Modelos",
+        ":material/table_chart: Ver datos",
+    ]
 )
 
 with pred_tab:
