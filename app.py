@@ -1,233 +1,154 @@
-"""Predicción de solar en España.
+"""Predicción de solar fotovoltaica en España para el día siguiente.
 
-Esta app carga el modelo M1 ya entrenado (models/modelo_solar.pkl,
-generado con `python entrenar_modelo.py`, igual que en el notebook)
-y deja probar qué pasaría mañana según la meteo que pongas.
+Carga el modelo M1 (models/modelo_solar.pkl, generado con `python entrenar_modelo.py`)
+y predice el día siguiente al último dato de REE con la meteo prevista por Open-Meteo,
+que se puede cambiar a mano.
 
 Para abrirla:
     streamlit run app.py
 """
 
+import json
 from pathlib import Path
 
 import joblib
-import numpy as np
 import pandas as pd
 import streamlit as st
-from sklearn.linear_model import LinearRegression
+
+from features import fila_siguiente, preparar
 
 BASE_DIR = Path(__file__).resolve().parent
 CLEAN = BASE_DIR / "data" / "solar_espana_clean.csv"
 RESULTS = BASE_DIR / "data" / "resultados_modelos.csv"
 MODEL_PKL = BASE_DIR / "models" / "modelo_solar.pkl"
+PREVISION = ("https://api.open-meteo.com/v1/forecast?latitude=40.4168&longitude=-3.7038"
+             "&daily=shortwave_radiation_sum,temperature_2m_mean&timezone=Europe%2FMadrid"
+             "&past_days=14&forecast_days=3")
 
-FEAT_FULL = [
-    "radiacion_MJm2",
-    "temp_media_Madrid",
-    "dow",
-    "month",
-    "dayofmonth",
-    "dayofyear",
-    "year",
-    "weekend",
-    "dayofyear_sin",
-    "dayofyear_cos",
-    "lag1",
-    "lag2",
-    "lag3",
-    "lag7",
-    "roll7",
-    "roll30",
-]
-
-st.set_page_config(
-    page_title="Solar España — previsión",
-    page_icon=":material/wb_sunny:",
-    layout="wide",
-)
+st.set_page_config(page_title="Solar España — previsión", page_icon=":material/wb_sunny:", layout="wide")
 
 
 @st.cache_data(ttl="1h")
 def load_clean() -> pd.DataFrame:
-    """Carga el csv limpio y añade lags y cosas de fecha (sin copiar el futuro)."""
-    df = pd.read_csv(CLEAN, parse_dates=["fecha"])
-    df = df.sort_values("fecha").reset_index(drop=True)
-    df["dayofyear_sin"] = np.sin(2 * np.pi * df.dayofyear / 365.25)
-    df["dayofyear_cos"] = np.cos(2 * np.pi * df.dayofyear / 365.25)
-    for lag in [1, 2, 3, 7]:
-        df[f"lag{lag}"] = df.solar_gwh.shift(lag)
-    df["roll7"] = df.solar_gwh.shift(1).rolling(7).mean()
-    df["roll30"] = df.solar_gwh.shift(1).rolling(30).mean()
-    return df.dropna().reset_index(drop=True)
+    return pd.read_csv(CLEAN, parse_dates=["fecha"]).sort_values("fecha").reset_index(drop=True)
 
 
 @st.cache_data(ttl="1h")
 def load_results() -> pd.DataFrame:
-    """Carga la tabla con cómo lo hizo cada modelo."""
-    res = pd.read_csv(RESULTS, index_col=0)
-    return res.sort_values("MAE")
+    return pd.read_csv(RESULTS, index_col=0).sort_values("MAE")
 
 
 @st.cache_resource
-def load_model() -> tuple[LinearRegression, pd.DataFrame, pd.DataFrame]:
-    """Carga el M1 desde el .pkl y separa train/test por fecha (test = últimos 365 días)."""
-    bundle = joblib.load(MODEL_PKL)
-    model = bundle["model"]
-    dfm = load_clean()
-    cutoff = dfm.fecha.max() - pd.Timedelta(days=364)
-    train = dfm[dfm.fecha < cutoff]
-    test = dfm[dfm.fecha >= cutoff].copy()
-    test["pred_M1"] = model.predict(test[FEAT_FULL])
-    return model, train, test
+def load_model() -> dict:
+    import warnings
+
+    import sklearn
+    try:
+        with warnings.catch_warnings():  # aviso de versión: se gestiona justo debajo
+            warnings.simplefilter("ignore")
+            bundle = joblib.load(MODEL_PKL)
+        if bundle.get("sklearn") == sklearn.__version__:
+            return bundle
+    except Exception:
+        pass
+    # Con otra versión de scikit-learn (p. ej. la demo web) el .pkl no es fiable:
+    # se reentrena igual que en entrenar_modelo.py, tarda menos de un segundo.
+    from entrenar_modelo import entrenar
+    return entrenar(load_clean())
 
 
-st.title("Cuánta solar haremos mañana en España", icon=":material/wb_sunny:")
-st.caption("Uso un modelo lineal con meteo (M1), probado en el último año")
+@st.cache_data(ttl="3h")
+def meteo_prevista() -> dict:
+    """Radiación y temperatura previstas en Madrid por día ({fecha: (rad, temp)}), o {} si falla."""
+    try:
+        import requests
+        datos = requests.get(PREVISION, timeout=10).json()
+    except Exception:
+        try:  # en la demo web (Pyodide) requests no tiene red
+            from pyodide.http import open_url
+            datos = json.load(open_url(PREVISION))
+        except Exception:
+            return {}
+    d = datos.get("daily", {})
+    return {f: (r, t) for f, r, t in zip(d.get("time", []), d.get("shortwave_radiation_sum", []),
+                                         d.get("temperature_2m_mean", [])) if r is not None and t is not None}
+
 
 try:
-    dfm = load_clean()
+    df = load_clean()
     results = load_results()
-    model, train, test = load_model()
+    bundle = load_model()
 except FileNotFoundError as exc:
-    st.error(
-        f"Falta un archivo: {exc}. "
-        "Corre `python datos.py` y luego `python entrenar_modelo.py` antes."
-    )
+    st.error(f"Falta un archivo: {exc}. Corre `python datos.py` y `python entrenar_modelo.py` antes.")
     st.stop()
 
-last = dfm.iloc[-1]
-m1 = results.loc["M1_lineal_con_meteo"]
+model, m1 = bundle["model"], bundle["metricas"]
+dfm = preparar(df)
+test = dfm[dfm.fecha >= pd.Timestamp(bundle["test_desde"])].copy()
+test["pred_M1"] = model.predict(test[bundle["features"]])
+ultimo = df.iloc[-1]
+objetivo = (ultimo.fecha + pd.Timedelta(days=1)).date()
+
+st.title("Cuánta solar fotovoltaica producirá España", anchor=False)
+st.caption(f"Modelo lineal con meteo (M1), evaluado en el último año de datos "
+           f"({bundle['test_desde']} a {bundle['test_hasta']}).")
 
 c1, c2, c3, c4 = st.columns(4)
-with c1:
-    st.metric("Mañana según M1", f"{test.iloc[-1]['pred_M1']:.1f} GWh", border=True)
-with c2:
-    st.metric("Error medio en test", f"{m1['MAE']:.2f} GWh", border=True)
-with c3:
-    st.metric("Acierto", f"{m1['Acierto']:.1f} %", border=True)
-with c4:
-    st.metric(
-        f"Último dato ({last.fecha.date()})",
-        f"{last.solar_gwh:.1f} GWh",
-        border=True,
-    )
+c1.metric(f"Último dato real ({ultimo.fecha.date()})", f"{ultimo.solar_gwh:.1f} GWh", border=True)
+c2.metric("Error medio en test (MAE)", f"{m1['MAE']:.1f} GWh", border=True)
+c3.metric("Días con error < 20 %", f"{m1['p20']:.0f} %", border=True)
+c4.metric("Datos", f"{len(df):,} días".replace(",", "."), border=True)
 
-pred_tab, comp_tab, data_tab = st.tabs(
-    [
-        ":material/thermostat: Predecir mañana",
-        ":material/bar_chart: Modelos",
-        ":material/table_chart: Ver datos",
-    ]
-)
+pred_tab, comp_tab, data_tab = st.tabs([":material/bolt: Predicción", ":material/bar_chart: Modelos",
+                                        ":material/table_chart: Datos"])
 
 with pred_tab:
-    st.subheader("Prueba con la meteo de mañana")
-    next_day = (dfm.fecha.max() + pd.Timedelta(days=1)).date()
-    with st.form("predict", border=False):
-        col_a, col_b, col_c = st.columns(3)
-        with col_a:
-            fecha = st.date_input(
-                "Qué día quieres predecir",
-                value=next_day,
-                min_value=dfm.fecha.max().date(),
-            )
-        with col_b:
-            radiacion = st.number_input(
-                "Radiación prevista (MJ/m²)", min_value=0.0, max_value=35.0, value=18.0
-            )
-        with col_c:
-            temp = st.number_input(
-                "Temperatura en Madrid (°C)",
-                min_value=-10.0,
-                max_value=45.0,
-                value=18.0,
-            )
-        st.form_submit_button("Predecir", icon=":material/bolt:")
+    st.subheader(f"Predicción para el {objetivo:%d/%m/%Y}")
+    prevista = meteo_prevista().get(str(objetivo))
+    if prevista:
+        st.caption("La meteo viene de la previsión de Open-Meteo para Madrid; puedes cambiarla.")
+    else:
+        st.caption("No hay previsión de Open-Meteo para ese día: introduce la meteo a mano.")
+    rad0, temp0 = prevista or (18.0, 18.0)
+    col_a, col_b = st.columns(2)
+    radiacion = col_a.number_input("Radiación (MJ/m²)", 0.0, 35.0, float(round(rad0, 2)))
+    temp = col_b.number_input("Temperatura media en Madrid (°C)", -10.0, 45.0, float(round(temp0, 1)))
 
-    hist = dfm.set_index("fecha").solar_gwh
-    row = {
-        "radiacion_MJm2": radiacion,
-        "temp_media_Madrid": temp,
-        "dow": pd.Timestamp(fecha).dayofweek,
-        "month": pd.Timestamp(fecha).month,
-        "dayofmonth": pd.Timestamp(fecha).day,
-        "dayofyear": pd.Timestamp(fecha).dayofyear,
-        "year": pd.Timestamp(fecha).year,
-        "weekend": int(pd.Timestamp(fecha).dayofweek >= 5),
-        "lag1": hist.iloc[-1],
-        "lag2": hist.iloc[-2],
-        "lag3": hist.iloc[-3],
-        "lag7": hist.iloc[-7],
-        "roll7": hist.iloc[-7:].mean(),
-        "roll30": hist.iloc[-30:].mean(),
-    }
-    row["dayofyear_sin"] = float(np.sin(2 * np.pi * row["dayofyear"] / 365.25))
-    row["dayofyear_cos"] = float(np.cos(2 * np.pi * row["dayofyear"] / 365.25))
-    x = pd.DataFrame([row])[FEAT_FULL]
-    yhat = float(model.predict(x)[0])
-    rmse = float(results.loc["M1_lineal_con_meteo", "RMSE"])
-
-    st.metric(
-        f"Lo que saldría el {fecha}",
-        f"{yhat:.1f} GWh",
-        delta=f"± error típico {rmse:.1f} GWh",
-        border=True,
-    )
-    st.caption(f"Más o menos estaría entre {yhat - rmse:.1f} y {yhat + rmse:.1f} GWh.")
-    st.caption(
-        "Los lags salen de los últimos 30 días reales; "
-        "la meteo tiene que ser la prevista, no la de después."
-    )
-
-    recent = dfm.tail(60)[["fecha", "solar_gwh"]].rename(
-        columns={"fecha": "Fecha", "solar_gwh": "Real"}
-    )
-    st.line_chart(recent, x="Fecha", y="Real")
+    yhat = float(model.predict(fila_siguiente(df, radiacion, temp))[0])
+    rmse = m1["RMSE"]
+    st.metric("Producción estimada", f"{yhat:.1f} GWh", border=True)
+    st.caption(f"Con el error típico del modelo, entre {yhat - rmse:.1f} y {yhat + rmse:.1f} GWh. "
+               "Los retardos salen de los últimos 30 días reales de REE.")
+    st.line_chart(df.tail(60), x="fecha", y="solar_gwh", x_label="Fecha", y_label="Solar (GWh)")
 
 with comp_tab:
-    st.subheader("Cómo lo hizo cada modelo (365 días de prueba)")
+    st.subheader("Comparativa de modelos")
+    st.caption("Evaluación del notebook (`proyecto_solar.ipynb`): test del 28/09/2025 al 27/09/2026.")
     st.dataframe(results, hide_index=False)
-    mae_df = results.reset_index(names="Modelo")[["Modelo", "MAE"]]
-    acc_df = results.reset_index(names="Modelo")[["Modelo", "Acierto"]]
+    tabla = results.reset_index(names="Modelo")
     left, right = st.columns(2)
-    with left:
-        with st.container(border=True):
-            st.markdown("**Error medio en test (GWh, cuanto menos mejor)**")
-            st.bar_chart(mae_df, x="Modelo", y="MAE", horizontal=True)
-    with right:
-        with st.container(border=True):
-            st.markdown("**Acierto % = 100·(1−MAPE), cuanto más mejor**")
-            st.bar_chart(acc_df, x="Modelo", y="Acierto", horizontal=True)
-    st.markdown("**Real contra lo que decía el M1**")
-    cmp_chart = test[["fecha", "solar_gwh", "pred_M1"]].rename(
-        columns={"fecha": "Fecha", "solar_gwh": "Real", "pred_M1": "M1 previsto"}
-    )
-    st.line_chart(cmp_chart, x="Fecha", y=["Real", "M1 previsto"])
-    st.caption(
-        "Con meteo el lineal gana casi 3 puntos de acierto; "
-        "los árboles se quedan cortos con lo nuevo de 2026."
-    )
+    with left, st.container(border=True):
+        st.markdown("**Error medio (GWh, cuanto menos mejor)**")
+        st.bar_chart(tabla, x="Modelo", y="MAE", horizontal=True)
+    with right, st.container(border=True):
+        st.markdown("**Días con error < 20 % (cuanto más mejor)**")
+        st.bar_chart(tabla, x="Modelo", y="p20", horizontal=True)
+    st.markdown("**Real frente a la predicción de M1 en el último año**")
+    st.line_chart(test.rename(columns={"solar_gwh": "Real", "pred_M1": "M1"}), x="fecha", y=["Real", "M1"],
+                  x_label="Fecha", y_label="GWh")
+    st.caption("Con meteo, el modelo lineal gana casi 3 puntos de acierto. Los árboles se quedan cortos "
+               "porque en 2026 hay más potencia instalada que en su entrenamiento.")
 
 with data_tab:
     st.subheader("Últimos datos")
-    st.dataframe(dfm.tail(15).iloc[::-1], hide_index=True)
-    st.markdown("**Radiación contra solar (el color es la temperatura)**")
-    st.scatter_chart(
-        dfm.tail(365),
-        x="radiacion_MJm2",
-        y="solar_gwh",
-        color="temp_media_Madrid",
-        x_label="Radiación diaria (MJ/m²)",
-        y_label="Solar (GWh)",
-    )
-    st.markdown("**Media de cada mes**")
-    monthly = dfm.groupby("month").solar_gwh.mean().reset_index(name="GWh media")
-    monthly = monthly.rename(columns={"month": "Mes"})
-    st.bar_chart(monthly, x="Mes", y="GWh media", y_label="GWh media diaria")
+    st.dataframe(df.tail(15).iloc[::-1], hide_index=True)
+    st.markdown("**Radiación frente a producción (último año; el color es la temperatura)**")
+    st.scatter_chart(df.tail(365), x="radiacion_MJm2", y="solar_gwh", color="temp_media_Madrid",
+                     x_label="Radiación diaria (MJ/m²)", y_label="Solar (GWh)")
+    st.markdown("**Media diaria por mes**")
+    st.bar_chart(df.groupby(df.fecha.dt.month).solar_gwh.mean().rename_axis("Mes").reset_index(),
+                 x="Mes", y="solar_gwh", y_label="GWh al día")
 
 st.divider()
-st.caption(
-    "Datos de REE (solar fotovoltaica) + "
-    "Open-Meteo (radiación y temperatura en Madrid como referencia). "
-    "El paso a paso está en `proyecto_solar.ipynb`."
-)
+st.caption("Datos: [REE](https://www.ree.es/es/datos/apidatos) (generación solar fotovoltaica diaria) y "
+           "[Open-Meteo](https://open-meteo.com) (radiación y temperatura en Madrid como referencia).")

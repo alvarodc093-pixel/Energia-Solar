@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install pandas numpy scikit-learn joblib requests pytest
+      - name: Tests
+        run: pytest -q
+      - name: El modelo se reentrena y da un error razonable
+        run: |
+          python entrenar_modelo.py
+          python -c "import joblib; m = joblib.load('models/modelo_solar.pkl')['metricas']; assert m['MAE'] < 25, m"

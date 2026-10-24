@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Solar España</title>
+  <meta name="description" content="Previsión diaria de la producción solar fotovoltaica en España con datos de REE y Open-Meteo, en Streamlit ejecutado en el navegador con stlite.">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/browser@1.11.0/build/stlite.css">
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #F0F9FF; }
+    #carga { padding: 48px 24px; text-align: center; color: #0C4A6E; }
+  </style>
+</head>
+<body>
+  <div id="root"><p id="carga">Cargando la app en tu navegador (la primera vez tarda unos 20-30 segundos)…</p></div>
+  <script type="module">
+    // La app de Streamlit se ejecuta en el navegador con stlite (Pyodide). En producción el código,
+    // los datos y el modelo se leen de la rama main de GitHub, que se actualiza cada semana.
+    import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@1.11.0/build/stlite.js";
+    const local = ["localhost", "127.0.0.1"].includes(location.hostname);
+    const base = local ? "" : "https://raw.githubusercontent.com/alvarodc093-pixel/Energia-Solar/main/";
+    const rutas = ["app.py", "features.py", "entrenar_modelo.py", "data/solar_espana_clean.csv",
+                   "data/resultados_modelos.csv", "models/modelo_solar.pkl"];
+    const files = Object.fromEntries(rutas.map((f) => [f, { url: base + f }]));
+    // El tema se mantiene sin las fuentes web personalizadas, que stlite no carga.
+    const tema = await (await fetch(base + ".streamlit/config.toml")).text();
+    files[".streamlit/config.toml"] = {
+      data: tema.split("\n").filter((l) => !/^(font|codeFont)\s*=/.test(l)).join("\n") + "\n[client]\ntoolbarMode = \"viewer\"\n",
+    };
+    mount({ requirements: ["pandas", "scikit-learn", "joblib"], entrypoint: "app.py", files }, document.getElementById("root"));
+  </script>
+</body>
+</html>
