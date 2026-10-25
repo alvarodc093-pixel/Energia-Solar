@@ -1,10 +1,17 @@
-# Energía solar en España - predecir lo de mañana
+# Solar España — previsión de producción fotovoltaica
 
-La idea es sencilla: adivinar cuánta solar fotovoltaica va a producir España mañana (en GWh por día). Esto le sirve a quien gestiona la red eléctrica para planificar cuánta reserva necesita.
+**Cuánta energía solar fotovoltaica producirá España mañana, con datos reales de REE y Open-Meteo.**
 
-Usé datos reales: la generación de REE + la meteo de Open-Meteo (radiación y temperatura de Madrid, que uso como referencia para toda España). Comparé varios modelos con y sin meteo, y monté una app que predice el día siguiente con la previsión meteorológica real.
+[![Demo](https://img.shields.io/badge/Demo-en%20vivo-2ea44f?style=flat-square)](https://solar-espana.vercel.app) [![CI](https://github.com/alvarodc093-pixel/Energia-Solar/actions/workflows/ci.yml/badge.svg)](https://github.com/alvarodc093-pixel/Energia-Solar/actions/workflows/ci.yml) [![Datos semanales](https://github.com/alvarodc093-pixel/Energia-Solar/actions/workflows/actualizar_datos.yml/badge.svg)](https://github.com/alvarodc093-pixel/Energia-Solar/actions/workflows/actualizar_datos.yml) ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white) ![scikit--learn](https://img.shields.io/badge/scikit--learn-ML-F7931E?style=flat-square&logo=scikitlearn&logoColor=white) ![Streamlit](https://img.shields.io/badge/Streamlit-app-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)
 
-**Demo:** https://solar-espana.vercel.app (la app corre entera en el navegador; la primera carga tarda unos 20-30 segundos)
+![Predicción del día siguiente](docs/img/prediccion.png)
+
+## En resumen
+
+- **Problema:** quien gestiona la red eléctrica necesita saber cuánta solar habrá mañana para planificar la reserva.
+- **Datos:** producción solar diaria de REE desde 2023 y radiación y temperatura de Open-Meteo; se actualizan solos cada lunes.
+- **Resultado:** el mejor modelo (lineal con meteo) acierta el 84,5 % y supera a los 3 baselines y a los modelos de árboles; la meteo aporta casi 3 puntos.
+- **App:** predice el día siguiente con la previsión real de Open-Meteo y compara los modelos; se ejecuta en el navegador.
 
 ## Qué hay en cada archivo
 
@@ -48,6 +55,8 @@ El notebook analiza el periodo del 01/01/2023 al 27/09/2026 (1.366 días).
 6. Saqué conclusiones y guardé `resultados_modelos.csv`.
 
 ## Cómo quedó cada modelo (test del 28/09/2025 al 27/09/2026)
+
+![Comparativa de modelos](docs/img/modelos.png)
 
 | Modelo | MAE (GWh) | R² | % acierto |
 |---|---|---|---|
