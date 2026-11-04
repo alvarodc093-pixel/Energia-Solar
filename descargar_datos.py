@@ -10,17 +10,26 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 BASE_DIR = Path(__file__).resolve().parent
 OUT = BASE_DIR / "data" / "solar_espana.csv"
 INICIO = date(2023, 1, 1)
+
+# Las APIs públicas fallan a veces de forma puntual (503, cortes de red): se
+# reintenta hasta 5 veces esperando 2, 4, 8... segundos antes de rendirse.
+SESION = requests.Session()
+SESION.mount("https://", HTTPAdapter(max_retries=Retry(
+    total=5, backoff_factor=2, status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["GET"], raise_on_status=False)))
 
 
 def fetch_ree(start: str, end: str) -> pd.DataFrame:
     url = "https://apidatos.ree.es/es/datos/generacion/estructura-generacion"
     params = {"start_date": f"{start}T00:00", "end_date": f"{end}T23:59", "time_trunc": "day"}
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
-    r = requests.get(url, params=params, headers=headers, timeout=60)
+    r = SESION.get(url, params=params, headers=headers, timeout=60)
     r.raise_for_status()
     for item in r.json().get("included", []):
         title = item.get("attributes", {}).get("title", "")
@@ -41,7 +50,7 @@ def fetch_meteo(start: str, end: str) -> pd.DataFrame:
         "daily": "shortwave_radiation_sum,temperature_2m_mean",
         "timezone": "Europe/Madrid",
     }
-    r = requests.get(url, params=params, timeout=60)
+    r = SESION.get(url, params=params, timeout=60)
     r.raise_for_status()
     j = r.json()["daily"]
     return pd.DataFrame({"fecha": pd.to_datetime(j["time"]),
