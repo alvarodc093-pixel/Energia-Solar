@@ -105,6 +105,10 @@ Los datos y el modelo ya vienen en el repo, así que para abrir la app basta con
 jupyter nbconvert --to notebook --execute proyecto_solar.ipynb --output proyecto_solar.ipynb
 ```
 
+## English summary
+
+Daily forecast of Spain's solar photovoltaic output for the next day, using REE generation data and Open-Meteo weather data. Five models are compared against three baselines on the last 365 days, which are held out by date. The best one, a linear model with weather features, reaches 84.5 % accuracy (MAE of 16.5 GWh, R² 0.92). Weather adds almost 3 points, and tree models fall behind because installed capacity keeps growing. Data and model refresh every week through GitHub Actions, and the Streamlit app predicts the next day with the real weather forecast.
+
 ## Autor
 
 Álvaro Domingo Cordón · [LinkedIn](https://www.linkedin.com/in/alvaro-domingo/) · [GitHub](https://github.com/alvarodc093-pixel)
