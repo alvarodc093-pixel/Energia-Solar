@@ -35,55 +35,61 @@
 
 ## Los datos
 
-- `solar_espana.csv`: columnas `fecha`, `solar_gwh`, `radiacion_MJm2`, `temp_media_Madrid`. Sin nulos, duplicados ni días sueltos.
-- `solar_espana_clean.csv`: le añadí `dow`, `month`, `dayofmonth`, `dayofyear`, `year`, `weekend` a partir de la fecha.
-- Para predecir usé: calendario + `dayofyear_sin/cos` + meteo del día + `lag1/2/3/7`, `roll7`, `roll30` (siempre con `shift(1)` para no copiar el futuro; hay un test que lo comprueba).
-- Separé train y test por fecha: el test son los últimos 365 días, que el modelo no ha visto.
-- Los datos se actualizan solos cada lunes con GitHub Actions: se descargan, se limpian, se reentrena el modelo y se pasan los tests. Ojo: REE revisa sus datos de los últimos días, así que un valor reciente puede cambiar un poco en la siguiente descarga.
+- `solar_espana.csv`: columnas `fecha`, `solar_gwh`, `radiacion_MJm2` y `temp_media_Madrid`. Sin nulos, duplicados ni días que falten.
+- `solar_espana_clean.csv`: añade `dow`, `month`, `dayofmonth`, `dayofyear`, `year` y `weekend` a partir de la fecha.
+- **Variables del modelo:** calendario, `dayofyear_sin/cos`, meteorología del día y retardos de la producción (`lag1/2/3/7`, `roll7`, `roll30`). Los retardos se calculan siempre con `shift(1)` para no usar información del futuro, y un test lo comprueba.
+- **Partición por fecha:** el test son los últimos 365 días, que el modelo no ve al entrenar.
+- **Actualización automática:** cada lunes un workflow de GitHub Actions descarga los datos nuevos, los limpia, reentrena el modelo y pasa los tests. REE revisa sus datos de los últimos días, así que un valor reciente puede cambiar ligeramente en la siguiente descarga.
 
-Fuentes: [REE](https://apidatos.ree.es/es/datos/generacion/estructura-generacion) y [Open-Meteo](https://open-meteo.com) (histórico y previsión para Madrid, 40.41, -3.70).
+Fuentes: [REE](https://apidatos.ree.es/es/datos/generacion/estructura-generacion) y [Open-Meteo](https://open-meteo.com) (histórico y previsión para Madrid, 40,41 / -3,70).
 
-## Qué hice en el notebook
+## El análisis
 
-El notebook analiza el periodo del 01/01/2023 al 27/09/2026 (1.366 días).
+El [notebook](proyecto_solar.ipynb) analiza del 01/01/2023 al 27/09/2026 (1.366 días):
 
-1. Planteé la pregunta: predecir `solar_gwh` de mañana.
-2. Revisé los datos: 0 nulos, 0 duplicados, 0 huecos, 0 valores raros. Los extremos cuadraban (días nublados de invierno y veranos de 2026 con más placas), así que no borré nada.
-3. Miré los datos con calma: serie en el tiempo + media de 30 días, radiación contra solar por año (corr 0.85), cajas por mes, temp contra solar, día de la semana (casi no afecta), histogramas, correlaciones, tabla año x mes, ratio solar/radiación (se ve que hay más capacidad cada año), y autocorrelación (lag-1: 0.92).
-4. Separé train/test e hice 3 baselines: B0 lo de ayer, B1 media de 7 días, B2 media del mes de años anteriores.
-5. Probé 5 modelos: M1 lineal con meteo, M2 lineal sin meteo, M3 RandomForest, M4 HistGradientBoosting, M5 RF sin meteo. Medí MAE, RMSE, MAPE, R², % acierto = 100·(1−MAPE) y % de días con error pequeño.
-6. Saqué conclusiones y guardé `resultados_modelos.csv`.
+1. **Pregunta:** predecir `solar_gwh` del día siguiente.
+2. **Calidad de datos:** 0 nulos, 0 duplicados, 0 huecos y ningún valor anómalo. Los extremos tienen explicación (días nublados de invierno y veranos de 2026 con más potencia instalada), así que no se elimina nada.
+3. **EDA:** serie temporal con media de 30 días, radiación frente a producción por año (correlación 0,85), distribución por mes, temperatura, día de la semana (casi no influye), correlaciones, tabla año × mes, ratio producción/radiación (crece cada año con la potencia instalada) y autocorrelación (0,92 a un día).
+4. **Baselines:** B0, el valor de ayer; B1, la media de 7 días; B2, la media del mismo mes en años anteriores.
+5. **Modelos:** M1 lineal con meteorología, M2 lineal sin meteorología, M3 Random Forest, M4 HistGradientBoosting y M5 Random Forest sin meteorología. Métricas: MAE, RMSE, MAPE, R², % de acierto = 100·(1 − MAPE) y % de días con error pequeño.
+6. **Conclusiones** y resultados guardados en `resultados_modelos.csv`.
 
-## Cómo quedó cada modelo (test del 28/09/2025 al 27/09/2026)
+## Resultados (test del 28/09/2025 al 27/09/2026)
 
 ![Comparativa de modelos](docs/img/modelos.png)
 
 | Modelo | MAE (GWh) | R² | % acierto |
 |---|---|---|---|
-| M1 lineal con meteo | 16.54 | 0.919 | 84.5 |
-| M2 lineal sin meteo | 19.51 | 0.882 | 81.8 |
-| B1 media móvil 7d | 22.03 | 0.849 | 80.2 |
-| B0 lo de ayer | 22.20 | 0.839 | 80.2 |
-| M3 RandomForest | 23.93 | 0.818 | 84.3 |
-| M4 HistGradientBoosting | 24.55 | 0.807 | 83.6 |
-| M5 RF sin meteo | 24.98 | 0.812 | 80.5 |
-| B2 media mensual | 48.70 | 0.336 | 68.9 |
+| M1 lineal con meteo | 16,54 | 0,919 | 84,5 |
+| M2 lineal sin meteo | 19,51 | 0,882 | 81,8 |
+| B1 media móvil 7 días | 22,03 | 0,849 | 80,2 |
+| B0 valor de ayer | 22,20 | 0,839 | 80,2 |
+| M3 Random Forest | 23,93 | 0,818 | 84,3 |
+| M4 HistGradientBoosting | 24,55 | 0,807 | 83,6 |
+| M5 RF sin meteo | 24,98 | 0,812 | 80,5 |
+| B2 media mensual | 48,70 | 0,336 | 68,9 |
 
-El detalle (RMSE, p10, p20) está en `data/resultados_modelos.csv`. Con los datos hasta el 23/10/2026, el M1 reentrenado da un MAE de 16.75 GWh en su último año, prácticamente lo mismo.
+El detalle (RMSE y % de días con error menor del 10 % y del 20 %) está en `data/resultados_modelos.csv`. Reentrenado con los datos hasta el 23/10/2026, el M1 da un MAE de 16,75 GWh en su último año, prácticamente lo mismo.
 
-## Lo que saqué en claro
+## Conclusiones
 
-1. El mejor fue el M1, el lineal con meteo: MAE de 16.5 GWh y 84.5 % de acierto. Más de la mitad de los días clava con menos de un 10 % de error y 4 de cada 5 con menos de un 20 %.
-2. La meteo importa mucho: sin ella el lineal baja de 84.5 % a 81.8 % y el RF de 84.3 % a 80.5 %.
-3. Los árboles se quedaron atrás porque 2026 tiene más potencia instalada que no habían visto. El lineal sí tira para arriba gracias a `year` y a la relación radiación-solar.
-4. Para negocio: con el M1 y la meteo prevista se puede planificar la reserva bastante bien.
-5. Fallos que asumo: en el test uso la meteo observada como si fuera una previsión perfecta (en la app sí se usa la previsión real, que tendrá algo más de error), Madrid no es toda España, y hay que reentrenar a menudo porque cada año hay más placas (por eso se reentrena cada semana). Lo siguiente sería dar intervalos de predicción en vez de un solo número.
+1. **El mejor modelo es el M1, lineal con meteorología:** MAE de 16,5 GWh y 84,5 % de acierto. Más de la mitad de los días el error es menor del 10 %, y 4 de cada 5 días, menor del 20 %.
+2. **La meteorología importa:** sin ella, el lineal baja del 84,5 % al 81,8 % y el Random Forest del 84,3 % al 80,5 %.
+3. **Los árboles se quedan atrás** porque en 2026 hay más potencia instalada que en cualquier dato de entrenamiento, y un árbol no extrapola. El lineal sí sigue la tendencia gracias a `year` y a la relación entre radiación y producción.
+4. **Para negocio:** con el M1 y la previsión meteorológica se puede planificar la reserva del día siguiente con un error típico de unos 16 GWh.
+
+## Limitaciones
+
+- En el test se usa la meteorología observada como si fuera una previsión perfecta. La app usa la previsión real, que añade algo de error.
+- La meteorología es la de Madrid, que no representa a toda España.
+- La potencia instalada crece cada año, así que el modelo necesita reentrenarse a menudo (por eso se reentrena cada semana).
+- El modelo da un único valor. El siguiente paso sería dar intervalos de predicción.
 
 ## La app
 
 - Predice el día siguiente al último dato de REE. La radiación y la temperatura vienen de la previsión de Open-Meteo y se pueden cambiar a mano.
 - Muestra el error del modelo en su último año, la comparativa de modelos del notebook y los datos recientes.
-- Carga el modelo de `models/modelo_solar.pkl`; si la versión de scikit-learn no coincide (pasa en la demo web), lo reentrena al arrancar, que tarda menos de un segundo.
+- Carga el modelo de `models/modelo_solar.pkl`. Si la versión de scikit-learn no coincide (pasa en la demo web), lo reentrena al arrancar en menos de un segundo.
 
 ## Cómo probarlo
 
