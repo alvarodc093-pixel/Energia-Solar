@@ -15,7 +15,7 @@
   <div id="root"><p id="carga">Cargando la app en tu navegador (la primera vez tarda unos 20-30 segundos)…</p></div>
   <script type="module">
     // La app de Streamlit se ejecuta en el navegador con stlite (Pyodide). En producción el código,
-    // los datos y el modelo se leen de la rama main de GitHub, que se actualiza cada semana.
+    // los datos y el modelo se leen de la rama main de GitHub, que se actualiza cada día.
     import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@1.11.0/build/stlite.js";
     const local = ["localhost", "127.0.0.1"].includes(location.hostname);
     const base = local ? "" : "https://raw.githubusercontent.com/alvarodc093-pixel/Energia-Solar/main/";

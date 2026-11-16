@@ -2,7 +2,7 @@ name: Actualizar datos y modelo
 
 on:
   schedule:
-    - cron: '0 6 * * 1'  # lunes a las 06:00 UTC
+    - cron: '0 7 * * *'  # cada día a las 07:00 UTC, cuando REE ya ha publicado el día anterior
   workflow_dispatch:
 
 permissions:
@@ -29,5 +29,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/solar_espana.csv data/solar_espana_clean.csv models/modelo_solar.pkl
-          git diff --cached --quiet || git commit -m "data: actualizacion semanal $(date +'%Y-%m-%d')"
+          git diff --cached --quiet || git commit -m "data: actualización diaria $(date +'%Y-%m-%d')"
           git push

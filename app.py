@@ -104,6 +104,12 @@ pred_tab, comp_tab, data_tab = st.tabs([":material/bolt: Predicción", ":materia
 
 with pred_tab:
     st.subheader(f"Predicción para el {objetivo:%d/%m/%Y}")
+    hoy = pd.Timestamp.now(tz="Europe/Madrid").date()
+    if objetivo < hoy:
+        dias = (hoy - objetivo).days
+        st.warning(f"Los datos de REE del repositorio llegan hasta el {ultimo.fecha:%d/%m/%Y}, así que esta "
+                   f"predicción es para un día que ya pasó (hace {dias} {'día' if dias == 1 else 'días'}). "
+                   "Se pondrá al día con la próxima actualización automática.", icon=":material/history:")
     prevista = meteo_prevista().get(str(objetivo))
     if prevista:
         st.caption("La meteo viene de la previsión de Open-Meteo para Madrid; puedes cambiarla.")

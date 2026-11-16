@@ -5,7 +5,8 @@ import pandas as pd
 import pytest
 
 from descargar_datos import tramos_anuales
-from features import FEAT_FULL, fila_siguiente, metricas, preparar, separar
+from datos import validar
+from features import FEAT_FULL, calendario, fila_siguiente, metricas, preparar, separar
 
 
 @pytest.fixture
@@ -44,6 +45,20 @@ def test_fila_siguiente_coincide_con_preparar(serie):
         assert fila[col] == pytest.approx(esperada[col]), col
 
 
+def test_preparar_falla_si_falta_un_dia(serie):
+    with pytest.raises(ValueError, match="un día por fila"):
+        preparar(serie.drop(index=20))
+
+
+def test_el_calendario_no_salta_en_anio_nuevo():
+    fechas = pd.Series(pd.to_datetime(["2026-12-31", "2027-01-01"]))
+    cal = calendario(fechas)
+    un_dia = 2 * np.pi / 365.25  # lo máximo que cambian seno y coseno en un día normal
+    assert cal.tendencia_anios.diff().iloc[1] == pytest.approx(1 / 365.25)
+    assert abs(cal.dayofyear_sin.diff().iloc[1]) < 2 * un_dia
+    assert abs(cal.dayofyear_cos.diff().iloc[1]) < 2 * un_dia
+
+
 def test_separar_por_fecha(serie):
     train, test = separar(preparar(serie), dias_test=10)
     assert len(test) == 10
@@ -55,6 +70,23 @@ def test_metricas():
     assert m["MAE"] == pytest.approx(15)
     assert m["Acierto"] == pytest.approx(90)
     assert m["p10"] == pytest.approx(100)
+    assert m["WAPE"] == pytest.approx(10)
+
+
+def test_validar_acepta_datos_buenos(serie):
+    validar(serie)
+
+
+@pytest.mark.parametrize("estropear, problema", [
+    (lambda d: d.drop(index=10), "días que faltan"),
+    (lambda d: pd.concat([d, d.iloc[[5]]]), "fechas duplicadas"),
+    (lambda d: d.assign(solar_gwh=d.solar_gwh.where(d.index != 3)), "nulos"),
+    (lambda d: d.assign(solar_gwh=d.solar_gwh.where(d.index != 3, -1.0)), "solar <= 0"),
+    (lambda d: d.assign(radiacion_MJm2=d.radiacion_MJm2.where(d.index != 3, 50.0)), "radiación fuera de 0-40"),
+])
+def test_validar_rechaza_datos_malos(serie, estropear, problema):
+    with pytest.raises(ValueError, match=problema):
+        validar(estropear(serie))
 
 
 def test_tramos_anuales():
